@@ -139,7 +139,6 @@ def process(self):
     global LAST_TIME
     t = rtc.RTC()
     is_clock_mode = True
-    is_clock_edit_mode = False
 
     # Setup menus
     menus = [
@@ -185,52 +184,50 @@ def process(self):
                 lcd.create_char(1, ICON_WIFI_OFF)
 
             edit_values = [LAST_TIME.tm_year, LAST_TIME.tm_mon, LAST_TIME.tm_mday, LAST_TIME.tm_hour, LAST_TIME.tm_min, LAST_TIME.tm_sec]
-            if is_clock_edit_mode:
-                if B.a_pressed():
-                    edit_index = (edit_index - 1) % 6
-                if B.b_pressed():
-                    edit_index = (edit_index + 1) % 6
-                if B.c_pressed():
-                    edit_values[edit_index] = (edit_values[edit_index] - 1) % {
-                        0: 10000,  # year
-                        1: 13,  # month (one more month to skip the decrement)
-                        2: 32,  # day (one more day to skip the decrement)
-                        3: 24,  # hour
-                        4: 60,  # minute
-                        5: 60  # second
-                    }[edit_index]
-                if B.d_pressed():
-                    edit_values[edit_index] = (edit_values[edit_index] + 1) % {
-                        0: 10000,  # year
-                        1: 13,  # month
-                        2: 32,  # day
-                        3: 24,  # hour
-                        4: 60,  # minute
-                        5: 60  # second
-                    }[edit_index]
 
-                if edit_values != [LAST_TIME.tm_year, LAST_TIME.tm_mon, LAST_TIME.tm_mday, LAST_TIME.tm_hour,
-                                   LAST_TIME.tm_min, LAST_TIME.tm_sec]:
-                    t.datetime = time.struct_time((edit_values[0], edit_values[1], edit_values[2], edit_values[3],
-                                                   edit_values[4], edit_values[5], 0, -1, -1))
-                    LAST_TIME = time.struct_time((edit_values[0], edit_values[1], edit_values[2], edit_values[3],
-                                                  edit_values[4], edit_values[5], 0, -1, -1))
+            if B.a_pressed():
+                edit_index = (edit_index - 1) % 6
+            if B.b_pressed():
+                edit_index = (edit_index + 1) % 6
+            if B.c_pressed():
+                edit_values[edit_index] = (edit_values[edit_index] - 1) % {
+                    0: 10000,  # year
+                    1: 13,  # month (one more month to skip the decrement)
+                    2: 32,  # day (one more day to skip the decrement)
+                    3: 24,  # hour
+                    4: 60,  # minute
+                    5: 60  # second
+                }[edit_index]
+            if B.d_pressed():
+                edit_values[edit_index] = (edit_values[edit_index] + 1) % {
+                    0: 10000,  # year
+                    1: 13,  # month
+                    2: 32,  # day
+                    3: 24,  # hour
+                    4: 60,  # minute
+                    5: 60  # second
+                }[edit_index]
 
-                edit_string = ''
-                if edit_index == 0:
-                    edit_string = '^-------------------'
-                if edit_index == 1:
-                    edit_string = '-----^--------------'
-                if edit_index == 2:
-                    edit_string = '--------^-----------'
-                if edit_index == 3:
-                    edit_string = '------------^-------'
-                if edit_index == 4:
-                    edit_string = '---------------^----'
-                if edit_index == 5:
-                    edit_string = '------------------^-'
-            else:
-                edit_string = ' '*20
+            if edit_values != [LAST_TIME.tm_year, LAST_TIME.tm_mon, LAST_TIME.tm_mday, LAST_TIME.tm_hour,
+                               LAST_TIME.tm_min, LAST_TIME.tm_sec]:
+                t.datetime = time.struct_time((edit_values[0], edit_values[1], edit_values[2], edit_values[3],
+                                               edit_values[4], edit_values[5], 0, -1, -1))
+                LAST_TIME = time.struct_time((edit_values[0], edit_values[1], edit_values[2], edit_values[3],
+                                              edit_values[4], edit_values[5], 0, -1, -1))
+
+            edit_string = ''
+            if edit_index == 0:
+                edit_string = '^-------------------'
+            if edit_index == 1:
+                edit_string = '-----^--------------'
+            if edit_index == 2:
+                edit_string = '--------^-----------'
+            if edit_index == 3:
+                edit_string = '------------^-------'
+            if edit_index == 4:
+                edit_string = '---------------^----'
+            if edit_index == 5:
+                edit_string = '------------------^-'
 
             date_str = '{:04}-{:02}-{:02}  {:02}:{:02}:{:02}'.format(*edit_values)
             DISPLAY_BUFFER = ('{:.1f}C             ' + chr(1) + chr(0) + date_str + edit_string + ' '*20).format(microcontroller.cpu.temperature)
@@ -240,12 +237,10 @@ def process(self):
             if current_menu is not None:
                 for i in current_menu(self):
                     if i is not None:
-                        if i is type(bool):
-                            print('Break out of loop')
+                        if i is False:
                             current_menu = None
                             break
-                        if i is type(float):
-                            print('TICK')
+                        else:
                             yield [pyRTOS.timeout(i)]
             # Process button input
             if manager.handle_input(audio, CLICK_NORMAL, lcd):
@@ -266,16 +261,41 @@ def edit_connection(self):
 
 def process_settings(self):
     global DISPLAY_BUFFER
+    menus = [
+        ('Edit connection', edit_connection),
+        ('Reset', process_reset),
+        ('Host WiFi page', process_wifi),
+        ('Die :3', process_credits),
+        ('Test', process_credits)
+    ]
+    manager = ScrollableList(menus)
+    current_menu = None
+    yield 0.1
+    while True:
+        manager.handle_input(audio, CLICK_NORMAL, lcd)
+        out = manager.render()
+        if callable(out):
+            current_menu = out
+        else:
+            DISPLAY_BUFFER = out
+        if B.mode_pressed():
+            yield False
+
+        if current_menu is not None:
+            for i in current_menu(self):
+                if i is not None:
+                    if i is False:
+                        current_menu = None
+                        break
+                    else:
+                        yield [pyRTOS.timeout(i)]
+        yield 1/60
 
 def process_credits(self):
     global DISPLAY_BUFFER
-    i = 0
     while True:
-        # print(i)
-        i += 1
         DISPLAY_BUFFER = '-=-=-=-=-=-=-=-=-=-=       PICO OS     \n       by Buko    \n-=-=-=-=-=-=-=-=-=-='
         if B.mode_pressed():
-            print('Break out of loop in func')
             yield False
         yield 1/60
 
