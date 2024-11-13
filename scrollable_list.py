@@ -1,6 +1,6 @@
 import buttons as B
 from audiocore import WaveFile
-from audiopwmio import PWMAudioOut as AudioOut
+import audiomixer
 from lib.lcd.lcd import LCD
 
 class ScrollableList:
@@ -31,10 +31,10 @@ class ScrollableList:
         self.current_inside_view = 0
 
 
-    def handle_input(self, audio: AudioOut, click_normal: WaveFile, lcd: LCD):
+    def handle_input(self, mixer: audiomixer.Mixer, click_normal: WaveFile, lcd: LCD):
         if B.b_pressed():
-            if audio is not None:
-                audio.play(click_normal)
+            if mixer is not None:
+                mixer.play(click_normal)
             self.current_inside_view += 1
             if self.current_inside_view >= 4:
                 self.current_index += 1
@@ -45,8 +45,8 @@ class ScrollableList:
                 self.current_inside_view = 3
             return True
         if B.a_pressed():
-            if audio is not None:
-                audio.play(click_normal)
+            if mixer is not None:
+                mixer.play(click_normal)
             self.current_inside_view -= 1
             if self.current_inside_view < 0:
                 self.current_index -= 1
