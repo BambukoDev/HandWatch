@@ -10,7 +10,7 @@ import analogio
 import rtc
 import storage
 import adafruit_sdcard  # TODO: test sdcardio, remove if it is better
-import sdcardio
+# import sdcardio
 import microcontroller
 
 # Special imports
@@ -20,9 +20,10 @@ import supervisor
 import ssl, wifi, socketpool, adafruit_requests
 
 # Music imports
-from audiocore import WaveFile
+from audiocore import WaveFile, RawSample
 from audiopwmio import PWMAudioOut as AudioOut
 import audiomixer
+import adafruit_wave as wave
 
 # PyRTOS and LCD library
 import lib.pyRTOS as pyRTOS
@@ -58,8 +59,9 @@ lcd.print('Booting...\n')
 # Connect to the card and mount the filesystem.
 try:
     spi = io.SPI(board.GP10, board.GP11, board.GP12)
-    cs = board.GP13
-    sdcard = sdcardio.SDCard(spi, cs, 32_000_000)  # TODO: remove baudrate if wont work
+    cs = digitalio.DigitalInOut(board.GP13)
+    #cs = board.GP13
+    sdcard = adafruit_sdcard.SDCard(spi, cs, 32_000_000)  # TODO: remove baudrate if wont work
     vfs = storage.VfsFat(sdcard)
     storage.mount(vfs, "/sd")
     IS_SD_MOUNTED = True
@@ -81,12 +83,10 @@ bat_voltage = analogio.AnalogIn(board.VOLTAGE_MONITOR)
 bat_plugged = digitalio.DigitalInOut(board.VBUS_SENSE)
 
 # Init audio
-CLICK_NORMAL = WaveFile("/sounds/ClickNormal.wav")
-CLICK_SELECT = WaveFile("/sounds/ClickSelect.wav")
-CLICK_MODE = WaveFile("/sounds/ClickMode.wav")
-audio = AudioOut(board.GP9)
-mixer = audiomixer.Mixer(voice_count=1, channel_count=1, buffer_size=2048)
-audio.play(mixer)
+CLICK_NORMAL = WaveFile('/sounds/ClickNormal.wav')
+CLICK_SELECT = WaveFile('/sounds/ClickSelect.wav')
+CLICK_MODE = WaveFile('/sounds/ClickMode.wav')
+MUSIC = WaveFile('/sd/music/StarWars60.wav', bytearray(256))
 
 TK = timekeep.TimeKeep()
 
@@ -102,19 +102,47 @@ def connect_to_wifi():
         return True
 
 def disconnect_from_wifi():
-    wifi.radio.stop_ap()
+    wifi.radio.stop_station()
 
 
-connect_to_wifi()
-if TK.sync_time_with_ntp() and IS_SD_MOUNTED:  # When time sync fails and SD is mounted
-    lcd.print('3')
-    TK.load_time()
-    time.sleep(1)
-else:
-    lcd.print('3a')
-    time.sleep(1)
-disconnect_from_wifi()
+# connect_to_wifi()
+# if TK.sync_time_with_ntp() and IS_SD_MOUNTED:  # When time sync fails and SD is mounted
+#     lcd.print('3')
+#     TK.load_time()
+#     time.sleep(1)
+# else:
+#     lcd.print('3a')
+#     time.sleep(1)
+# disconnect_from_wifi()
 
+audio = AudioOut(board.GP9)
+mixer = audiomixer.Mixer(voice_count=1, channel_count=2, buffer_size=2048, sample_rate=22050, bits_per_sample=16)
+audio.play(mixer)
+
+with wave.open('/sd/music/StarWars60.wav', 'rb') as f:
+    print('Loading music...')
+    print('Sample width:', f.getsampwidth(), 'bytes')
+    print('Frequency:', f.getframerate(), 'kHz')
+    print('Number of frames:', f.getnframes())
+    print('Audio duration:', f.getnframes() / f.getframerate(), 'seconds')
+    first = 0
+    last = 1/20
+    f.setpos(first)
+    audio.play(f)
+    while audio.playing:
+        frame = f.tell()
+        if frame >= last:
+            audio.stop()
+            first = last
+            last += 1/20
+            f.setpos(first)
+            # escape the playing for display
+            print('Rendered screen')
+            # return to playing
+            audio.play(f)
+
+
+# mixer.play(MUSIC_CANTINA)
 
 lcd.print('Boot complete\n')
 lcd.print('SD:' + str(IS_SD_MOUNTED) + '\n')
@@ -155,12 +183,11 @@ def process(self):
     manager = ScrollableList(menus)
     edit_index = 0
     yield
+
     while True:
         if IS_IN_SLEEP:
             yield [pyRTOS.timeout(0.5)]
             continue
-
-        lcd.set_cursor_mode(CursorMode.HIDE)
 
         if B.mode_pressed():
             is_clock_mode = not is_clock_mode
@@ -317,14 +344,14 @@ def process_connect_wifi(self):
 
     if wifi.radio.connected:
         DISPLAY_BUFFER = 'Already connected!'
-        yield 0.5
+        yield 2
         yield False
 
     if connect_to_wifi():
         DISPLAY_BUFFER = 'Failed to connect'
     else:
         DISPLAY_BUFFER = 'Connected!'
-    yield 1
+    yield 2
     yield False
 
 def process_disconnect_wifi(self):
@@ -334,12 +361,12 @@ def process_disconnect_wifi(self):
 
     if not wifi.radio.connected:
         DISPLAY_BUFFER = 'Already disconnected!'
-        yield 0.5
+        yield 2
         yield False
 
     disconnect_from_wifi()
     DISPLAY_BUFFER = 'Disconnected!'
-    yield 1
+    yield 2
     yield False
 
 def process_reset(self):
@@ -358,15 +385,15 @@ def process_sync_time_ntp(self):
 
     if not wifi.radio.connected:
         DISPLAY_BUFFER = 'Connect to WiFi\nfirst!'
-        yield 0.5
+        yield 2
         yield False
 
     if TK.sync_time_with_ntp():
         DISPLAY_BUFFER = 'Failed to connect'
-        yield 0.5
+
     else:
         DISPLAY_BUFFER = 'Synced'
-        yield 0.5
+    yield 2
     yield False
 
 
@@ -377,16 +404,17 @@ def process_host_page(self):
 
     if not wifi.radio.connected:
         DISPLAY_BUFFER = 'Connect to WiFi\nfirst!'
-        yield 0.5
+        yield 2
         yield False
 
     DISPLAY_BUFFER = 'Not implemented yet'
-    yield 1
+    yield 2
     yield False
 
 
 def process_music(self):
     global DISPLAY_BUFFER
+    global mixer
     DISPLAY_BUFFER = ''
     lcd.clear()
 
@@ -395,9 +423,23 @@ def process_music(self):
         yield 1
         yield False
 
+    # Reset the mixer to new values
+    audio.stop()
+    mixer = audiomixer.Mixer(channel_count=MUSIC.channel_count, buffer_size=2048, sample_rate=MUSIC.sample_rate, bits_per_sample=MUSIC.bits_per_sample)
+    audio.play(mixer)
+
+    mixer.voice[1].level = 1
+
+    mixer.play(MUSIC, voice=1)
+
     while True:
-        CLICK_SELECT
-        yield 1/60
+        DISPLAY_BUFFER = 'Playing: ' + str(mixer.playing)
+        if B.mode_pressed():
+            mixer.stop_voice(1)
+            yield False
+        render(self)
+        time.sleep(1)
+        # yield 1/20
 
 def display_timeout(self):
     global IS_IN_SLEEP

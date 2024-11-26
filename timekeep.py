@@ -58,6 +58,6 @@ class TimeKeep:
             t.datetime = time.struct_time(
                 (j['year'], j['month'], j['day'], j['hour'], j['minute'], j['seconds'], 0, -1, -1))
         except Exception as e:
-            print('WiFi NTP Error:', e)
+            print('WiFi NTP Error:' + str(e))
             return True
         return False
