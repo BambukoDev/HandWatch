@@ -116,7 +116,7 @@ def disconnect_from_wifi():
 # disconnect_from_wifi()
 
 audio = AudioOut(board.GP9)
-mixer = audiomixer.Mixer(voice_count=1, channel_count=2, buffer_size=2048, sample_rate=22050, bits_per_sample=16)
+mixer = audiomixer.Mixer(voice_count=1, channel_count=MUSIC.channel_count, buffer_size=2048, sample_rate=MUSIC.sample_rate, bits_per_sample=8)
 audio.play(mixer)
 
 with wave.open('/sd/music/StarWars60.wav', 'rb') as f:
@@ -125,21 +125,25 @@ with wave.open('/sd/music/StarWars60.wav', 'rb') as f:
     print('Frequency:', f.getframerate(), 'kHz')
     print('Number of frames:', f.getnframes())
     print('Audio duration:', f.getnframes() / f.getframerate(), 'seconds')
+    print('Frames per second:', f.getnframes() / f.getframerate(), 'frames')
     first = 0
-    last = 1/20
+    last = f.getnframes() / f.getframerate()
     f.setpos(first)
-    audio.play(f)
+
+    audio.play(RawSample(f.readframes(f.getnframes() / f.getframerate()), channel_count=f.getnchannels(), sample_rate=MUSIC.sample_rate))
     while audio.playing:
         frame = f.tell()
+        print(frame)
         if frame >= last:
             audio.stop()
             first = last
-            last += 1/20
+            last += f.getnframes() / f.getframerate()
             f.setpos(first)
             # escape the playing for display
             print('Rendered screen')
             # return to playing
-            audio.play(f)
+            audio.play(RawSample(f.readframes(f.getnframes() / f.getframerate()), channel_count=f.getnchannels(), sample_rate=MUSIC.sample_rate))
+            time.sleep(1)
 
 
 # mixer.play(MUSIC_CANTINA)
