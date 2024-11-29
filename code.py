@@ -7,6 +7,7 @@ import board
 import busio as io
 import digitalio
 import analogio
+import pwmio
 import rtc
 import storage
 import adafruit_sdcard  # TODO: test sdcardio, remove if it is better
@@ -38,6 +39,16 @@ from scrollable_list import ScrollableList
 
 supervisor.runtime.autoreload = False
 
+# Load settings
+try:
+    with open("settings.json", "r") as f:
+        settings = json.load(f)
+        f.close()
+except Exception as e:
+    print("Failed to load settings: " + str(e))
+    settings = {}
+
+# Icons
 ICON_CURSOR = (0x08,0x0C,0x0E,0x0F,0x0E,0x0C,0x08,0x00)
 ICON_BAT_FULL = (0x0E,0x1F,0x1F,0x1F,0x1F,0x1F,0x1F,0x1F)
 ICON_BAT_MED = (0x0E,0x11,0x11,0x1F,0x1F,0x1F,0x1F,0x1F)
@@ -63,7 +74,7 @@ try:
     #cs = board.GP13
     sdcard = adafruit_sdcard.SDCard(spi, cs, 32_000_000)  # TODO: remove baudrate if wont work
     vfs = storage.VfsFat(sdcard)
-    storage.mount(vfs, "/sd")
+    storage.mount(vfs, '/sd')
     IS_SD_MOUNTED = True
 except Exception as e:
     IS_SD_MOUNTED = False
@@ -86,7 +97,9 @@ bat_plugged = digitalio.DigitalInOut(board.VBUS_SENSE)
 CLICK_NORMAL = WaveFile('/sounds/ClickNormal.wav')
 CLICK_SELECT = WaveFile('/sounds/ClickSelect.wav')
 CLICK_MODE = WaveFile('/sounds/ClickMode.wav')
-MUSIC = WaveFile('/sd/music/StarWars60.wav', bytearray(256))
+
+# MUSIC = WaveFile('/sd/music/StarWars60.wav', bytearray(256))
+MUSIC = WaveFile('/sounds/CantinaBand3.wav')
 
 TK = timekeep.TimeKeep()
 
@@ -115,38 +128,13 @@ def disconnect_from_wifi():
 #     time.sleep(1)
 # disconnect_from_wifi()
 
-audio = AudioOut(board.GP9)
-mixer = audiomixer.Mixer(voice_count=1, channel_count=MUSIC.channel_count, buffer_size=2048, sample_rate=MUSIC.sample_rate, bits_per_sample=8)
-audio.play(mixer)
-
-with wave.open('/sd/music/StarWars60.wav', 'rb') as f:
-    print('Loading music...')
-    print('Sample width:', f.getsampwidth(), 'bytes')
-    print('Frequency:', f.getframerate(), 'kHz')
-    print('Number of frames:', f.getnframes())
-    print('Audio duration:', f.getnframes() / f.getframerate(), 'seconds')
-    print('Frames per second:', f.getnframes() / f.getframerate(), 'frames')
-    first = 0
-    last = f.getnframes() / f.getframerate()
-    f.setpos(first)
-
-    audio.play(RawSample(f.readframes(f.getnframes() / f.getframerate()), channel_count=f.getnchannels(), sample_rate=MUSIC.sample_rate))
-    while audio.playing:
-        frame = f.tell()
-        print(frame)
-        if frame >= last:
-            audio.stop()
-            first = last
-            last += f.getnframes() / f.getframerate()
-            f.setpos(first)
-            # escape the playing for display
-            print('Rendered screen')
-            # return to playing
-            audio.play(RawSample(f.readframes(f.getnframes() / f.getframerate()), channel_count=f.getnchannels(), sample_rate=MUSIC.sample_rate))
-            time.sleep(1)
-
+# audio = AudioOut(board.GP9)
+# mixer = audiomixer.Mixer(voice_count=1, channel_count=MUSIC.channel_count, buffer_size=2048, sample_rate=MUSIC.sample_rate, bits_per_sample=8)
+# audio.play(mixer)
 
 # mixer.play(MUSIC_CANTINA)
+
+audio_pwm = pwmio.PWMOut(board.GP9, variable_frequency=True)
 
 lcd.print('Boot complete\n')
 lcd.print('SD:' + str(IS_SD_MOUNTED) + '\n')
@@ -197,7 +185,7 @@ def process(self):
             is_clock_mode = not is_clock_mode
             current_menu = None
             lcd.clear()
-            audio.play(CLICK_MODE)
+            # audio.play(CLICK_MODE)
             yield [pyRTOS.timeout(0.05)]
 
         if is_clock_mode:
@@ -276,7 +264,7 @@ def process(self):
                         else:
                             yield [pyRTOS.timeout(i)]
             # Process button input
-            if manager.handle_input(audio, CLICK_NORMAL, lcd):
+            if manager.handle_input(CLICK_NORMAL, lcd):
                 # yield [pyRTOS.timeout(0.01)]
                 pass
 
@@ -322,7 +310,7 @@ def process_settings(self):
                     else:
                         yield i
 
-        manager.handle_input(audio, CLICK_NORMAL, lcd)
+        manager.handle_input(CLICK_NORMAL, lcd)
         out = manager.render()
         if callable(out):
             current_menu = out
@@ -422,28 +410,50 @@ def process_music(self):
     DISPLAY_BUFFER = ''
     lcd.clear()
 
-    if not IS_SD_MOUNTED:
-        DISPLAY_BUFFER = 'SD Card unavailable'
-        yield 1
-        yield False
+    # if not IS_SD_MOUNTED:
+    #     DISPLAY_BUFFER = 'SD Card unavailable'
+    #     yield 1
+    #     yield False
 
     # Reset the mixer to new values
-    audio.stop()
-    mixer = audiomixer.Mixer(channel_count=MUSIC.channel_count, buffer_size=2048, sample_rate=MUSIC.sample_rate, bits_per_sample=MUSIC.bits_per_sample)
-    audio.play(mixer)
+    # audio.stop()
+    # mixer = audiomixer.Mixer(channel_count=MUSIC.channel_count, buffer_size=2048, sample_rate=MUSIC.sample_rate, bits_per_sample=MUSIC.bits_per_sample)
+    # audio.play(mixer)
 
-    mixer.voice[1].level = 1
+    # mixer.voice[1].level = 1
 
-    mixer.play(MUSIC, voice=1)
+    with wave.open('/sounds/CantinaBand3.wav', 'rb') as f:
+        print('Loading music...')
+        print('Sample width:', f.getsampwidth(), 'bytes')
+        print('Frequency:', f.getframerate(), 'kHz')
+        print('Number of frames:', f.getnframes())
+        print('Audio duration:', f.getnframes() / f.getframerate(), 'seconds')
+        print('Frames per second:', f.getframerate() / f.getnchannels(), 'frames')
+        print('Music sample rate:', MUSIC.sample_rate)
 
-    while True:
-        DISPLAY_BUFFER = 'Playing: ' + str(mixer.playing)
-        if B.mode_pressed():
-            mixer.stop_voice(1)
-            yield False
-        render(self)
-        time.sleep(1)
-        # yield 1/20
+        while True:
+            for i in play_music(f):
+                if i is not None:
+                    if i is False:
+                        break
+                    else:
+                        yield i
+
+
+def play_music(file: wave.Wave_read):
+    curr_frame = 0
+    audio_pwm.duty_cycle = 32760
+    timeout = 1 / (file.getframerate() / file.getnchannels())
+    while curr_frame < file.getnframes():
+        data = file.readframes(1)
+        curr_frame += 1
+        freq = int(data[0])
+        if freq == 0:
+            audio_pwm.frequency = 1
+        else:
+            audio_pwm.frequency = freq
+    yield False
+
 
 def display_timeout(self):
     global IS_IN_SLEEP
@@ -489,7 +499,7 @@ time.sleep(1)
 pyRTOS.add_task(pyRTOS.Task(render, name='render', priority=1))
 pyRTOS.add_task(pyRTOS.Task(process, name='process'))
 pyRTOS.add_task(pyRTOS.Task(display_timeout, name='display_timeout', priority=255))
-pyRTOS.add_task(pyRTOS.Task(write_time_sd, name='write_time', priority=10))
+# pyRTOS.add_task(pyRTOS.Task(write_time_sd, name='write_time', priority=10))
 pyRTOS.add_task(pyRTOS.Task(update_last_time, name='update_last_time', priority=2))
 
 pyRTOS.start()
